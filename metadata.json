@@ -1,0 +1,6 @@
+{
+  "name": "Talko",
+  "description": "Yönetim paneli, destek hesabı ve gelişmiş özellikleri olan gerçek zamanlı bir sohbet uygulaması.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

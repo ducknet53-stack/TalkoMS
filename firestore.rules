@@ -1,0 +1,73 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Check if user is the owner of the document
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Check if user has admin privileges
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == "ducknet53@gmail.com" || (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true
+        )
+      );
+    }
+
+    // Check if the current user is NOT banned
+    function isNotBanned() {
+      return isAuthenticated() && (
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isBanned != true
+      );
+    }
+
+    match /users/{userId} {
+      // Anyone can read user profiles (needed for username uniqueness check before auth)
+      allow read: if true;
+      // Only the user themselves (if not banned) or an admin can write to their profile
+      allow write: if isAuthenticated() && (
+        (isOwner(userId) && isNotBanned()) || 
+        userId == 'system_talko_destek' || 
+        isAdmin()
+      );
+    }
+    
+    match /chats/{chatId} {
+      // User must be a participant to read/write the chat, or be an admin
+      allow read: if isAuthenticated() && isNotBanned() && (isAdmin() || resource == null || request.auth.uid in resource.data.participants);
+      
+      // Allow create if the user is in the participants array of the new data, or is admin
+      allow create: if isAuthenticated() && isNotBanned() && (isAdmin() || request.auth.uid in request.resource.data.participants);
+      
+      // Allow update if the user is a participant or is admin
+      allow update: if isAuthenticated() && isNotBanned() && (isAdmin() || request.auth.uid in resource.data.participants);
+      allow delete: if isAdmin(); // Only admin can delete if needed
+      
+      match /messages/{messageId} {
+        // Read: must be participant of parent chat or admin
+        allow read: if isAuthenticated() && isNotBanned() && (isAdmin() || chatId.matches('.*' + request.auth.uid + '.*'));
+        // Create: must be participant or admin, and senderId must match
+        allow create: if isAuthenticated() && isNotBanned()
+                     && (isAdmin() || chatId.matches('.*' + request.auth.uid + '.*'))
+                     && (request.resource.data.senderId == request.auth.uid || request.resource.data.senderId == 'system_talko_destek' || request.resource.data.senderId == 'system_talko_ai' || isAdmin());
+        // Only admin can delete messages
+        allow update, delete: if isAdmin();
+      }
+      
+      match /typing/{userId} {
+        allow read: if isAuthenticated() && isNotBanned() && (isAdmin() || chatId.matches('.*' + request.auth.uid + '.*'));
+        allow write: if isAuthenticated() && isNotBanned() && isOwner(userId);
+      }
+    }
+  }
+}
